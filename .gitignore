@@ -5,3 +5,4 @@ downloads/
 .vimmqueuer_manifest.json
 *.egg-info/
 .claude/
+queue.csv
