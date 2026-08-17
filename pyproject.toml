@@ -1,0 +1,19 @@
+[project]
+name = "vimm-queuer"
+version = "0.1.0"
+description = "Simple CLI that downloads a queue of Vimm's Lair vault links one at a time, with a live progress UI."
+requires-python = ">=3.10"
+dependencies = [
+    "playwright>=1.45",
+    "rich>=13.7",
+]
+
+[project.scripts]
+vimm-queuer = "vimmqueuer.cli:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["vimmqueuer"]
