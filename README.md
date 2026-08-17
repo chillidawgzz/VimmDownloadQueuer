@@ -17,13 +17,21 @@ work in an actual browser window instead (needs a display, e.g. WSLg).
 ## How it works
 
 - The queue file is a CSV with columns `title,url` — one Vimm's Lair vault
-  URL per row (e.g. `https://vimm.net/vault/32`). `title` can be left blank;
-  before a run starts, anything missing a title gets looked up from the
-  site itself and the file is rewritten in place with the discovered names,
-  so future runs (and diffs of the file) show real titles instead of bare
-  URLs.
-- The currently-downloading item's title is shown live in the terminal
-  alongside its progress bar.
+  URL per row (e.g. `https://vimm.net/vault/32`). Both `title` and the
+  comma are optional: a bare `https://vimm.net/vault/32` line works fine.
+  Anything missing a title gets looked up from the site itself and the
+  file is rewritten in place with the discovered name, so future runs (and
+  diffs of the file) show real titles instead of bare URLs.
+- The full queue stays visible for the whole run, in order, updating in
+  place — each row shows its position number, status, and (while
+  downloading) bytes downloaded/total size, percentage, elapsed time, and
+  an ETA.
+- **The queue file can be edited live while a run is in progress.** A
+  background watcher polls it for changes and reflects them immediately:
+  add a row and it joins the queue, delete a row (before it's started
+  downloading) and it drops out, reorder rows and the still-pending part
+  of the queue reorders to match. See "Live editing" below for pause
+  markers.
 - Items are downloaded **sequentially**, using **one persistent browser
   session** for the whole run (matching Vimm's Lair's single-session
   policy), with a short randomized pause between items.
@@ -84,19 +92,32 @@ Options:
 ```csv
 title,url
 Adventure Island 4 (NES),https://vimm.net/vault/32
-,https://vimm.net/vault/3
+https://vimm.net/vault/3
 ```
 
 Blank titles are filled in automatically (and saved back to this same file)
 the next time you run the tool.
 
+### Live editing
+
+While a run is in progress, you can edit the queue file directly (in any
+editor) and it takes effect within a couple of seconds, no restart needed:
+
+- **Add** a row (bare URL or `title,url`) — it joins the end of the queue.
+- **Delete** a row — if it hasn't started downloading yet, it drops out.
+- **Reorder** rows — the still-pending part of the queue reorders to match.
+- **Pause** — add a line whose url is the literal word `PAUSE` (any case),
+  optionally with a label: `Taking a break,PAUSE`. The queue stops at that
+  position and waits — whatever's already downloading finishes, but nothing
+  past the pause line starts. Delete the line to let it continue.
+
 ### Display
 
-While running, the terminal shows a permanent line for each item as it
-finishes (✓ completed, ✗ failed with the reason, or ✓ skipped if already
-downloaded) — labeled by title — plus a single in-place progress line
-(updated via a plain carriage return, no fancy terminal takeover) for
-whatever's currently downloading, with its title and percentage.
+The full queue stays on screen for the whole run, in original order,
+updating in place: a position number, a status icon (⬇ downloading, ✓
+completed, ✗ failed, • still queued, ⏸ pause marker), the title, and for
+the item currently downloading — bytes downloaded/total size, percentage,
+elapsed time, and an ETA, e.g. `420.0MB/1.4GB   28.0%  0:37  eta 1:35`.
 
 ## Notes / etiquette
 

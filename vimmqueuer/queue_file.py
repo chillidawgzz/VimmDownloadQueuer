@@ -2,6 +2,11 @@
 
 `title` may be blank - the downloader fills in anything missing from the
 site itself before a run starts and rewrites the file in place.
+
+A row whose url field is the literal word `PAUSE` (any case) is a pause
+marker rather than a download: title becomes an optional label for it (e.g.
+"Taking a break,PAUSE"). The queue stops at a pause marker's position and
+waits - remove the line to let it continue.
 """
 
 from __future__ import annotations
@@ -12,6 +17,7 @@ from enum import Enum
 from pathlib import Path
 
 FIELDNAMES = ["title", "url"]
+PAUSE_SENTINEL = "PAUSE"
 
 
 class Status(str, Enum):
@@ -36,10 +42,13 @@ class QueueItem:
     error: str | None = None
     attempts: int = 0
     started_at: float | None = None  # time.monotonic() when the current attempt began
+    is_pause: bool = False
 
     @property
     def label(self) -> str:
         """Best available human-readable name for display/logging."""
+        if self.is_pause:
+            return self.title or "paused"
         return self.title or self.filename or self.url
 
 
@@ -74,6 +83,9 @@ def parse_queue_file(path: Path) -> list[QueueItem]:
             title, url = "", fields[0].strip()
         if not url:
             continue
+        if url.strip().upper() == PAUSE_SENTINEL:
+            items.append(QueueItem(url="", row_no=row_no, title=title, is_pause=True))
+            continue
         if not url.lower().startswith(("http://", "https://")):
             raise ValueError(f"{path}: row {row_no}: doesn't look like a URL: {url!r}")
         items.append(QueueItem(url=url, row_no=row_no, title=title))
@@ -90,4 +102,5 @@ def write_queue_file(path: Path, items: list[QueueItem]) -> None:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
         for item in items:
-            writer.writerow({"title": item.title, "url": item.url})
+            url = PAUSE_SENTINEL if item.is_pause else item.url
+            writer.writerow({"title": item.title, "url": url})

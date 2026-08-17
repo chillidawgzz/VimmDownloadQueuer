@@ -28,6 +28,9 @@ _STYLE = {
     Status.SKIPPED: "green",
 }
 
+PAUSE_ICON = "⏸"
+PAUSE_STYLE = "bold yellow"
+
 MIN_REFRESH_INTERVAL_S = 0.1  # cap redraws at ~10Hz - plenty smooth, avoids spamming the terminal
 
 
@@ -99,7 +102,9 @@ class QueueDisplay:
 
     def _progress_text(self, item: QueueItem) -> str:
         if item.total_bytes:
-            amount = f"{item.received_bytes / item.total_bytes * 100:5.1f}%"
+            pct = item.received_bytes / item.total_bytes * 100
+            size = f"{_human_bytes(item.received_bytes)}/{_human_bytes(item.total_bytes)}"
+            amount = f"{size}  {pct:5.1f}%"
         else:
             amount = _human_bytes(item.received_bytes)
         parts = [amount]
@@ -121,9 +126,16 @@ class QueueDisplay:
         table.add_column(width=number_width, justify="right")
         table.add_column(width=2)
         table.add_column(ratio=1)
-        table.add_column(width=26, justify="right")
+        table.add_column(width=40, justify="right")
 
         for position, item in enumerate(ordered, start=1):
+            if item.is_pause:
+                number = Text(f"{position}.", style=PAUSE_STYLE)
+                icon = Text(PAUSE_ICON, style=PAUSE_STYLE)
+                label = Text(f"── {item.label} ──", style=PAUSE_STYLE)
+                table.add_row(number, icon, label, "")
+                continue
+
             number = Text(f"{position}.", style=_STYLE[item.status])
             icon = Text(_ICON[item.status], style=_STYLE[item.status])
             if item.status == Status.DOWNLOADING:
@@ -133,12 +145,30 @@ class QueueDisplay:
             else:
                 table.add_row(number, icon, self._row_text(item), "")
 
-        header = Text(f"Queue: {self.source_name}  ({self._counts()})", style="bold")
+        title = f"Queue: {self.source_name}  ({self._counts()})"
+        if self._is_paused():
+            title += f"  {PAUSE_ICON} paused"
+        header = Text(title, style="bold")
         return Group(header, table)
 
     def _counts(self) -> str:
         done = sum(1 for i in self.items if i.status in (Status.COMPLETED, Status.SKIPPED))
         failed = sum(1 for i in self.items if i.status == Status.FAILED)
-        total = len(self.items)
+        total = sum(1 for i in self.items if not i.is_pause)
         suffix = f", {failed} failed" if failed else ""
         return f"{done}/{total} done{suffix}"
+
+    def _is_paused(self) -> bool:
+        """True if a pause marker is currently holding back queued items -
+        i.e. nothing's downloading, and something queued sits behind the
+        earliest pause marker's position."""
+        pause_positions = [i.row_no for i in self.items if i.is_pause]
+        if not pause_positions:
+            return False
+        if any(i.status == Status.DOWNLOADING for i in self.items):
+            return False
+        boundary = min(pause_positions)
+        return any(
+            i.status == Status.QUEUED and not i.is_pause and i.row_no > boundary
+            for i in self.items
+        )

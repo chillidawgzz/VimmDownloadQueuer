@@ -154,9 +154,12 @@ class VimmDownloader:
         # affect: added, removed, or reordered to match the file. Once an
         # item starts downloading it's out of `pending` and there's no
         # clean way to unwind it, so edits to already-downloading/finished
-        # rows don't retroactively do anything.
-        by_url: dict[str, QueueItem] = {i.url: i for i in items}
-        pending: list[QueueItem] = [i for i in items if i.status == Status.QUEUED]
+        # rows don't retroactively do anything. Pause markers never go in
+        # `pending` (they're not downloadable) or `by_url` (they're
+        # fungible, keyed on nothing) - they just sit in `items` as a
+        # boundary/visual marker.
+        by_url: dict[str, QueueItem] = {i.url: i for i in items if not i.is_pause}
+        pending: list[QueueItem] = [i for i in items if i.status == Status.QUEUED and not i.is_pause]
         wake = asyncio.Event()
         stop_requested = asyncio.Event()
 
@@ -166,8 +169,11 @@ class VimmDownloader:
         try:
             first = True
             while True:
-                if not pending:
-                    if stop_requested.is_set():
+                pause_row_no = min((i.row_no for i in items if i.is_pause), default=None)
+                blocked = bool(pending) and pause_row_no is not None and pending[0].row_no > pause_row_no
+
+                if not pending or blocked:
+                    if stop_requested.is_set() and not pending:
                         break
                     wake.clear()
                     await wake.wait()
@@ -249,9 +255,9 @@ class VimmDownloader:
             logger.debug("watcher: skipping unreadable queue file: %s", exc)
             return
 
-        file_order = [row.url for row in rows]
-        file_urls = set(file_order)
-        file_titles = {row.url: row.title for row in rows}
+        regular_rows = [row for row in rows if not row.is_pause]
+        pause_rows = [row for row in rows if row.is_pause]
+        file_urls = {row.url for row in regular_rows}
         changed = False
 
         for item in [i for i in pending if i.url not in file_urls]:
@@ -262,27 +268,42 @@ class VimmDownloader:
             logger.debug("watcher: removed row: %s", item.url)
 
         new_items = []
-        for row in rows:
-            if row.url not in by_url:
+        for row in regular_rows:
+            existing = by_url.get(row.url)
+            if existing is None:
                 by_url[row.url] = row
                 items.append(row)
                 pending.append(row)
                 new_items.append(row)
                 changed = True
                 logger.debug("watcher: added row: %s", row.url)
+            else:
+                existing.row_no = row.row_no
+                # A manual title edit directly in the file, for a row that
+                # hasn't started downloading yet, is respected too.
+                if existing in pending and row.title and row.title != existing.title:
+                    existing.title = row.title
+                    changed = True
 
         # Reorder the still-pending portion to match the file's current
         # order - already-downloading/finished rows keep their place.
+        file_order = [row.url for row in regular_rows]
         reordered = [by_url[u] for u in file_order if by_url.get(u) in pending]
         if reordered != pending:
             pending[:] = reordered
             changed = True
             logger.debug("watcher: reordered pending queue")
 
-        # Position numbers for display, matching the file's current order.
-        for row_no, url in enumerate(file_order, start=1):
-            if url in by_url:
-                by_url[url].row_no = row_no
+        # Pause markers are fungible (no identity beyond position/label), so
+        # just rebuild them fresh from the file each time rather than
+        # diffing - they're never downloaded, only used as a boundary/
+        # visual marker, and parse_queue_file already gives each one the
+        # right row_no (matching its line position in the whole file).
+        old_pause_count = sum(1 for i in items if i.is_pause)
+        items[:] = [i for i in items if not i.is_pause] + pause_rows
+        if len(pause_rows) != old_pause_count:
+            changed = True
+            logger.debug("watcher: %d pause marker(s) in file", len(pause_rows))
 
         titles_changed = False
         for item in new_items:
@@ -292,18 +313,8 @@ class VimmDownloader:
                     item.title = title
                     titles_changed = True
 
-        # A manual title edit directly in the file, for a row we already
-        # know about, is respected too - but only while it's still pending;
-        # once a download starts, item.title has already been used/shown.
-        for url, title in file_titles.items():
-            item = by_url.get(url)
-            if item and item in pending and title and title != item.title:
-                item.title = title
-                titles_changed = True
-                changed = True
-
         if titles_changed:
-            ordered_for_write = [by_url[u] for u in file_order if u in by_url]
+            ordered_for_write = [row if row.is_pause else by_url[row.url] for row in rows]
             write_queue_file(queue_path, ordered_for_write)
 
         if changed and items:
@@ -313,7 +324,7 @@ class VimmDownloader:
 
     async def _prefetch_titles(self, items: list[QueueItem], on_update: ProgressCallback) -> bool:
         """Fill in item.title for any item missing one. Returns True if any changed."""
-        missing = [i for i in items if not i.title]
+        missing = [i for i in items if not i.title and not i.is_pause]
         changed = False
         for index, item in enumerate(missing):
             title = await self._fetch_title(item.url)
