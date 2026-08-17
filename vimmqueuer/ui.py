@@ -110,12 +110,13 @@ class QueueDisplay:
         parts = [amount]
         if item.started_at is not None:
             elapsed = time.monotonic() - item.started_at
+            rate = item.received_bytes / elapsed if elapsed > 0 else 0.0
+            if rate > 0:
+                parts.append(f"{_human_bytes(rate)}/s")
             parts.append(_format_duration(elapsed))
-            if item.total_bytes and item.received_bytes > 0 and elapsed > 0:
-                rate = item.received_bytes / elapsed
+            if item.total_bytes and rate > 0:
                 remaining = item.total_bytes - item.received_bytes
-                if rate > 0:
-                    parts.append(f"eta {_format_duration(remaining / rate)}")
+                parts.append(f"eta {_format_duration(remaining / rate)}")
         return "  ".join(parts)
 
     def _render(self) -> Group:
@@ -126,7 +127,7 @@ class QueueDisplay:
         table.add_column(width=number_width, justify="right")
         table.add_column(width=2)
         table.add_column(ratio=1)
-        table.add_column(width=40, justify="right")
+        table.add_column(width=50, justify="right")
 
         for position, item in enumerate(ordered, start=1):
             if item.is_pause:
