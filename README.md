@@ -45,12 +45,35 @@ work in an actual browser window instead (needs a display, e.g. WSLg).
 
 ## Setup (WSL / Linux)
 
-Use a virtualenv so nothing gets installed globally:
+### Quick start (any machine, any directory)
+
+Clone the repo anywhere, then run the `vimm-queuer` launcher script by its
+path. On first run it builds a private virtualenv next to the script, installs
+the package, and downloads the Chromium build — after that it just runs:
+
+```bash
+/path/to/VimmDownloadQueuer/vimm-queuer queue.csv --out-dir downloads
+```
+
+The launcher finds its own location, so your current working directory doesn't
+matter — the queue file and `--out-dir` are resolved relative to wherever you
+run it from. Put the script on your `PATH` (e.g. symlink it into `~/.local/bin`)
+to just type `vimm-queuer`. Set `PYTHON=python3.12` to pick a specific
+interpreter for the venv.
+
+The one-time system-library step still needs sudo:
+
+```bash
+sudo /path/to/VimmDownloadQueuer/.venv/bin/playwright install-deps
+```
+
+### Manual setup
+
+If you'd rather manage the virtualenv yourself:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
 pip install -e .          # installs the `vimm-queuer` command
 
 # Downloads a headless Chromium build Playwright manages itself
@@ -59,6 +82,10 @@ playwright install chromium
 # Installs the Linux system libraries Chromium needs (sudo, one-time)
 sudo .venv/bin/playwright install-deps
 ```
+
+A virtualenv is tied to the absolute path it was created at — if you move or
+re-clone the repo, delete `.venv` and let the launcher rebuild it (or re-run
+`pip install -e .`).
 
 `playwright install-deps` needs `sudo apt` access. If you don't have that,
 ask whoever administers the box to run it once, or install the equivalent

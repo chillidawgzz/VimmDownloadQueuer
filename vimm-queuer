@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Portable launcher: run this from any directory on any machine.
+#   /path/to/VimmDownloadQueuer/vimm-queuer queue.csv -o downloads
+#
+# On first run it creates a private virtualenv next to this script, installs
+# the package and the Playwright browser, then execs the CLI. Downloads and the
+# queue file are always resolved relative to your current working directory.
+set -euo pipefail
+
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+venv="$here/.venv"
+py="$venv/bin/python"
+
+if [ ! -x "$py" ]; then
+    echo "vimm-queuer: setting up virtualenv at $venv (first run only)..." >&2
+    "${PYTHON:-python3}" -m venv "$venv"
+    "$py" -m pip install --quiet --upgrade pip
+    "$py" -m pip install --quiet -e "$here"
+    "$py" -m playwright install chromium
+fi
+
+exec "$py" -m vimmqueuer "$@"

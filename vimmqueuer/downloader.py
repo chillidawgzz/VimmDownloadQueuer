@@ -20,6 +20,7 @@ import contextlib
 import json
 import logging
 import random
+import tempfile
 import time
 from pathlib import Path
 from typing import Callable
@@ -29,7 +30,7 @@ from playwright.async_api import async_playwright, Browser, BrowserContext
 
 from .queue_file import QueueItem, Status, parse_queue_file, write_queue_file
 
-TRACE_LOG_PATH = Path("/tmp/vimmqueuer_trace.log")
+TRACE_LOG_PATH = Path(tempfile.gettempdir()) / "vimmqueuer_trace.log"
 logger = logging.getLogger("vimmqueuer")
 logger.setLevel(logging.DEBUG)
 if not logger.handlers:
